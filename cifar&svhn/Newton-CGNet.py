@@ -10,7 +10,6 @@ import random
 import argparse
 import sys
 
-# 定义一个类为Block
 class Block(collections.namedtuple('Block',['scope','unit_fn','args'])):
 	'A namede tuple describing a ResNet block.'
 
@@ -49,15 +48,13 @@ def stack_blocks_dense(net,blocks,keep_prob,outputs_collections=None):
 	for block in blocks:
 		with tf.variable_scope(block.scope,'block',[net]) as sc:
 			for i, unit in enumerate(block.args):
-				# 这边可能要根据简明ResNet做改动
 				with tf.variable_scope('unit_%d' %(i+1), values=[net]):
-					unit_depth,unit_stride = unit #这里有改动
+					unit_depth,unit_stride = unit 
 					net = block.unit_fn(net,
 										depth=unit_depth,
 										stride=unit_stride,
 										keep_prob=keep_prob)
-					# print('after',i+1,'block:',net.get_shape().as_list())
-			# net=slim.utils.colect_named_outputs(outputs_collections,sc.name,net)
+
 	return net
 
 def compute_gradient(inputs,depth,keep_prob,stride=1):
@@ -79,8 +76,7 @@ def compute_gradient(inputs,depth,keep_prob,stride=1):
 	else:
 		shortcut = inputs
 	outputs = shortcut + branch_sum
-	# outputs = inputs + slim.batch_norm(branch_sum)
-	# outputs = tf.nn.relu(outputs)
+
 
 	return outputs
 
@@ -88,16 +84,12 @@ def compute_gradient(inputs,depth,keep_prob,stride=1):
 def bottleneck(inputs,depth,stride,keep_prob,outputs_collections=None,scope=None):
 	with tf.variable_scope(scope,'bottleneck_v2',[inputs]) as sc:
 		depth_in = slim.utils.last_dimension(inputs.get_shape(),min_rank=4)
-		# preact=slim.batch_norm(inputs,activation_fn=tf.nn.relu,scope='preact')
+
 		if depth == depth_in:
 			shortcut = subsample(inputs,stride,'shortcut')
 		else:
 			shortcut = slim.conv2d(inputs,depth,[1,1],stride=stride,activation_fn=None,scope='shortcut')
-		# 下面是改动部分，由原来的1+3+1改为适合cifar的3+3block
-		# with slim.arg_scope([slim.conv2d],activation_fn=None,normalizer_fn=None):
-		# 	y = conv2d_same(inputs,depth,1,stride,scope='y0')
-		# y = inputs
-		# y = shortcut
+
 		y = inputs
 		g = compute_gradient(y,depth,keep_prob,stride)
 		if depth == depth_in:
@@ -125,13 +117,11 @@ def bottleneck(inputs,depth,stride,keep_prob,outputs_collections=None,scope=None
 		y = y + alpha * d
 		outputs = shortcut + y
 
-		# return slim.utils.collect_named_outputs(outputs_collections,sc.name,output)
 		return outputs
 
 def resnet_v2(inputs,blocks,keep_prob,num_classes=None,is_training=True,reuse=None,scope=None):
 	with tf.variable_scope(scope,'resnet_v2',[inputs],reuse=reuse) as sc:
-		# with slim.arg_scope([slim.conv2d,bottleneck,stack_blocks_dense],outputs_collections=end_points_collection):
-		# with slim.arg_scope([slim.batch_norm],**batch_norm_params['is_training']=is_training):
+
 		net = inputs
 		with slim.arg_scope([slim.batch_norm],is_training=is_training):
 			with slim.arg_scope([slim.conv2d],activation_fn=None,normalizer_fn=None):
@@ -140,12 +130,10 @@ def resnet_v2(inputs,blocks,keep_prob,num_classes=None,is_training=True,reuse=No
 			net = slim.batch_norm(net,activation_fn=tf.nn.relu,scope='postnorm')
 			net = tf.reduce_mean(net,[1,2],name='pool5',keep_dims=True)
 			net = slim.conv2d(net,num_classes,[1,1],activation_fn=None,normalizer_fn=None,scope='logits',weights_initializer=tf.contrib.layers.xavier_initializer())
-				# end_points['predictions'] = slim.softmax(net,scope='predictions')
 	return net #,end_points
 
 def resnet_v2_simple(num_classes,batch_size,
 	height,width,channal,reuse=None,scope='resnet_simple',n=3):
-	# 初始化超参数
 	with tf.name_scope('input'):
 		input_x = tf.placeholder(tf.float32,[None,height,width,channal],name='input_x')
 		input_y = tf.placeholder(tf.int32,[None],name='input_y')
@@ -160,8 +148,7 @@ def resnet_v2_simple(num_classes,batch_size,
 	epoch_increment = tf.assign(epoch_step,tf.add(epoch_step,tf.constant(1)))
 	iteration_increment = tf.assign(iteration_step,tf.add(epoch_step,tf.constant(1)))
 
-	# 其中每个残差单元包含两个卷积层，args=(block_depth,stride)，
-	# 两个卷积层depth一样可以共用，stride表示第一个卷积层的stride，决定是否降采样
+
 	blocks=[
 	Block('block1',bottleneck,[(16,1)] * n),
 	Block('block2',bottleneck,[(32,2)]+[(32,1)]*(n-1)),
@@ -171,11 +158,10 @@ def resnet_v2_simple(num_classes,batch_size,
 		logits = resnet_v2(input_x,blocks,keep_prob,num_classes,is_training=is_training,reuse=reuse,scope=scope) 
 	logits = tf.squeeze(logits,[1,2],name='squeeze')
 	classification_losses = slim.losses.softmax_cross_entropy(logits,onehot_labels)
-	# print('the total loss is:',slim.losses.get_regularization_losses())
+
 	regularization_loss = tf.add_n(slim.losses.get_regularization_losses())
 	total_loss = classification_losses + regularization_loss
-	# optimizer = tf.train.GradientDescentOptimizer(learning_rate) #可以考虑改为Adam
-	# optimizer = tf.train.AdamOptimizer(learning_rate)
+
 	optimizer = tf.train.MomentumOptimizer(learning_rate, 0.9, use_nesterov=True)
 	update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 	with tf.control_dependencies(update_ops):
@@ -202,8 +188,7 @@ def unpickle(file):
 	return dict
 
 def load_cifar10():
-	# 导入cifar数据集，包括train_data和test_data,数据规模都为(batch,height,width,channal)
-	# 数据类型为ndarray,数据标签train_labels和test_labels是一维array，范围是0-9
+
 	height,width = 32,32
 	channal = 3
 	train_data = np.zeros(shape=(0,height*width*channal))
@@ -228,8 +213,7 @@ def load_cifar10():
 	return height,width,channal,train_data,train_labels,test_data,test_labels
 
 def load_cifar100():
-	# 导入cifar数据集，包括train_data和test_data,数据规模都为(batch,height,width,channal)
-	# 数据类型为ndarray,数据标签train_labels和test_labels是一维array，范围是0-9
+
 	height,width = 32,32
 	channal = 3
 	train_data = np.zeros(shape=(0,height*width*channal))
@@ -381,11 +365,10 @@ if __name__ == '__main__':
 
 	print('end process data.')
 
-	# 构建计算图
+
 	config = tf.ConfigProto()
 	config.gpu_options.allow_growth = True
 	with tf.Session(config=config) as sess:
-		# 导入预训练的结果
 		origin_learning_rate = .1
 		num_epoches = 300
 		validate_every = 1
@@ -425,21 +408,15 @@ if __name__ == '__main__':
 		count_params()
 		curr_epoch = sess.run(epoch_step)
 
-		# 输入数据并训练
 		number_of_training_data = len(trainX)
 		for epoch in range(curr_epoch,num_epoches):
-			# iteration = sess.run(iteration_step)
 
-			# 	break
-			# if epoch <= 1:
-			# 	cur_learning_rate = .01
 			if epoch < 150:
 				cur_learning_rate = origin_learning_rate
 			elif epoch < 225:
 				cur_learning_rate = origin_learning_rate * .1
 			elif epoch < 300:
 				cur_learning_rate = origin_learning_rate * .01
-			# resnet_arg_scope(is_training=True)
 			loss, acc, counter = .0, .0, 0
 			trainX, trainY = myshuffle(trainX,trainY)
 			if if_aug:
@@ -459,11 +436,7 @@ if __name__ == '__main__':
 					loss,acc =.0,.0
 
 			sess.run(epoch_increment)
-			# if epoch % validate_every == 0:
-			# 	# resnet_arg_scope(is_training=False)
-			# 	eval_loss,eval_acc = do_eval(sess,validX,validY,total_loss,accuracy)
-			# 	print('Epoch %d\tValidation Loss:%.3e\tValidation Accuracy:%.5f' %(epoch,eval_loss,eval_acc))
-				# 保存模型
+
 			if epoch % save_every == 0:
 				save_path = ckpt_dir+'model.ckpt'
 				saver.save(sess,save_path,global_step=epoch)
